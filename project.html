@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animal Kingdom Hierarchy Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .class-box {
+            border: 2px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background-color: white;
+            transition: all 0.3s ease;
+            cursor: grab;
+            position: relative;
+        }
+        .class-box.base {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
+        .class-box.dragging {
+            opacity: 0.5;
+            transform: scale(1.05);
+        }
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 0.75rem;
+            padding: 2rem 1rem;
+            transition: all 0.3s ease;
+            min-height: 150px;
+        }
+        .drop-zone.drag-over {
+            background-color: #dbeafe;
+            border-color: #3b82f6;
+        }
+        .method-block {
+            border: 1px solid #94a3b8;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            background-color: #f1f5f9;
+            cursor: grab;
+        }
+        .method-slot {
+            border: 2px dashed #cbd5e1;
+            border-radius: 0.5rem;
+            padding: 1rem 0.5rem;
+            margin-top: 0.5rem;
+            background-color: #f8fafc;
+            min-height: 50px;
+        }
+        .method-slot.drag-over {
+            background-color: #dbeafe;
+            border-color: #3b82f6;
+        }
+        .feedback-correct {
+            animation: flash-green 0.8s ease;
+        }
+        .feedback-incorrect {
+            animation: shake 0.5s ease;
+        }
+        @keyframes flash-green {
+            0%, 100% { background-color: white; }
+            50% { background-color: #dcfce7; }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .progress-bar-inner {
+            transition: width 0.5s ease-in-out;
+        }
+        .modal {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .modal-hidden {
+            opacity: 0;
+            transform: scale(0.95);
+            pointer-events: none;
+        }
+        .score-change {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            font-weight: bold;
+            opacity: 0;
+            animation: fade-up 1.5s ease-out;
+        }
+        .score-plus { color: #22c55e; }
+        .score-minus { color: #ef4444; }
+        @keyframes fade-up {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -150%) scale(1.5); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center h-screen">
+
+    <div id="game-container" class="w-full max-w-7xl mx-auto p-4 md:p-6 lg:p-8 h-full flex flex-col">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Code Kingdom: Efficiency Challenge</h1>
+                <p id="level-title" class="text-indigo-600 font-semibold text-lg"></p>
+            </div>
+            <div class="flex items-center gap-6">
+                <div class="text-center relative">
+                    <div id="score-container" class="text-3xl font-bold text-green-600">0</div>
+                    <div class="text-sm font-medium">Efficiency Score</div>
+                </div>
+                <div class="w-64">
+                    <div class="w-full bg-gray-200 rounded-full h-4">
+                        <div id="progress-bar" class="bg-indigo-500 h-4 rounded-full progress-bar-inner" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center text-sm mt-1 font-medium">Level Progress</p>
+                </div>
+                 <button id="restart-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center justify-center">
+                    <i class="fas fa-redo mr-2"></i> Restart
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+            <!-- Left Panel: Blueprints/Blocks -->
+            <aside class="bg-white p-4 rounded-xl shadow-md overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Blueprints & Behaviors</h2>
+                <div id="blueprints-panel"></div>
+                <div id="methods-panel" class="mt-6"></div>
+            </aside>
+
+            <!-- Center Panel: Workspace -->
+            <section id="workspace" class="lg:col-span-2 bg-white p-4 rounded-xl shadow-md overflow-y-auto relative">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Ecosystem Workspace</h2>
+                <div id="workspace-content" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+                <svg id="lines-svg" class="absolute top-0 left-0 w-full h-full pointer-events-none z-0"></svg>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-8 max-w-lg w-full text-center transform transition-all">
+            <div id="modal-icon" class="text-6xl mb-4"></div>
+            <h2 id="modal-title" class="text-3xl font-bold mb-2"></h2>
+            <p id="modal-message" class="text-gray-600 mb-6"></p>
+            <button id="modal-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition duration-300">
+                Start Game
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const game = {
+            currentLevel: 0,
+            score: 0,
+            levels: [
+                {
+                    title: "Level 1: Inheritance",
+                    instructions: "Establish the foundation of your ecosystem. Create specialized animals by inheriting from the base 'Animal' blueprint. Drag 'Mammal' and 'Bird' to make them inherit from 'Animal'.",
+                    progressPerStep: 50,
+                    setup: () => {
+                        game.renderBlueprints(['Animal', 'Mammal', 'Bird']);
+                        game.renderWorkspace({
+                            'Animal': { type: 'base', children: ['Mammal', 'Bird'] },
+                            'Mammal': { type: 'drop-zone', parent: 'Animal', content: null },
+                            'Bird': { type: 'drop-zone', parent: 'Animal', content: null }
+                        });
+                    },
+                    checkCompletion: () => {
+                        const mammalZone = document.getElementById('drop-zone-Mammal');
+                        const birdZone = document.getElementById('drop-zone-Bird');
+                        return mammalZone.children.length > 0 && birdZone.children.length > 0;
+                    },
+                },
+                {
+                    title: "Level 2: Method Overriding",
+                    instructions: "Different animals have unique behaviors. Override the generic 'makeSound' method in 'Dog' and 'Cat' with their specific sounds.",
+                    progressPerStep: 50,
+                    setup: () => {
+                        game.renderBlueprints(['Dog', 'Cat']);
+                        game.renderMethods(['"Woof!"', '"Meow!"']);
+                        game.renderWorkspace({
+                            'Animal': { type: 'base', children: ['Mammal'], methods: { makeSound: 'Generic Sound' } },
+                            'Mammal': { type: 'filled', content: 'Mammal', parent: 'Animal', children: ['Dog', 'Cat'] },
+                            'Dog': { type: 'drop-zone', parent: 'Mammal', content: null, methodSlots: ['makeSound'] },
+                            'Cat': { type: 'drop-zone', parent: 'Mammal', content: null, methodSlots: ['makeSound'] }
+                        });
+                    },
+                    checkCompletion: () => {
+                        const dogSound = document.querySelector('#method-slot-Dog-makeSound .method-block');
+                        const catSound = document.querySelector('#method-slot-Cat-makeSound .method-block');
+                        return dogSound && dogSound.dataset.method === '"Woof!"' && catSound && catSound.dataset.method === '"Meow!"';
+                    },
+                },
+                {
+                    title: "Level 3: Code Reusability",
+                    instructions: "Efficiency is key! Override the 'move' method for the 'Eagle', but for maximum points, REUSE the 'breathe' method from 'Animal' by leaving its slot empty.",
+                    progressPerStep: 50,
+                    setup: () => {
+                        game.renderMethods(['"Flies high"', '"Breathes air"']);
+                        game.renderWorkspace({
+                            'Animal': { type: 'base', children: ['Bird'], methods: { breathe: 'Breathes air' } },
+                            'Bird': { type: 'filled', content: 'Bird', parent: 'Animal', children: ['Eagle'] },
+                            'Eagle': { type: 'filled-methods', content: 'Eagle', parent: 'Bird', methodSlots: ['move', 'breathe'] }
+                        });
+                    },
+                    checkCompletion: () => {
+                        const moveMethod = document.querySelector('#method-slot-Eagle-move .method-block');
+                        const breatheMethod = document.querySelector('#method-slot-Eagle-breathe .method-block');
+                        return moveMethod && moveMethod.dataset.method === '"Flies high"' && !breatheMethod;
+                    },
+                }
+            ],
+
+            init() {
+                document.getElementById('restart-btn').addEventListener('click', () => this.loadLevel(this.currentLevel));
+                this.showWelcomeModal();
+            },
+            
+            showWelcomeModal() {
+                const modal = document.getElementById('modal');
+                const modalIcon = document.getElementById('modal-icon');
+                const modalTitle = document.getElementById('modal-title');
+                const modalMessage = document.getElementById('modal-message');
+                const modalButton = document.getElementById('modal-button');
+
+                modalIcon.innerHTML = '&#129422;'; // Paw prints
+                modalTitle.textContent = "Welcome, Code Biologist!";
+                modalMessage.textContent = "Your mission is to build a digital ecosystem using the principles of object-oriented programming. Focus on efficiency to get the highest score!";
+                modalButton.textContent = "Start Game";
+                
+                modalButton.onclick = () => {
+                    this.hideModal();
+                    this.loadLevel(this.currentLevel);
+                };
+                
+                modal.classList.remove('modal-hidden');
+            },
+
+            loadLevel(levelIndex) {
+                const level = this.levels[levelIndex];
+                this.currentLevel = levelIndex;
+                this.score = 0;
+                this.updateScore(0, false);
+                
+                document.getElementById('level-title').textContent = level.title;
+                document.getElementById('blueprints-panel').innerHTML = '';
+                document.getElementById('methods-panel').innerHTML = '';
+                document.getElementById('workspace-content').innerHTML = '';
+                document.getElementById('lines-svg').innerHTML = '';
+                this.updateProgressBar(0);
+
+                this.showObjectiveModal(level.title, level.instructions);
+                
+                level.setup();
+                this.setupDragAndDrop();
+                setTimeout(() => this.drawLines(), 100);
+            },
+            
+            showObjectiveModal(title, message) {
+                 const modal = document.getElementById('modal');
+                const modalIcon = document.getElementById('modal-icon');
+                const modalTitle = document.getElementById('modal-title');
+                const modalMessage = document.getElementById('modal-message');
+                const modalButton = document.getElementById('modal-button');
+
+                modalIcon.innerHTML = '<i class="fas fa-bullseye text-indigo-500"></i>';
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                modalButton.textContent = "Begin";
+                
+                modalButton.onclick = () => this.hideModal();
+                modal.classList.remove('modal-hidden');
+            },
+
+            renderBlueprints(names) {
+                const panel = document.getElementById('blueprints-panel');
+                panel.innerHTML = `<h3 class="text-lg font-semibold text-gray-700 mb-2">Class Blueprints</h3>`;
+                names.forEach(name => {
+                    const el = document.createElement('div');
+                    el.className = `class-box ${name === 'Animal' ? 'base' : ''}`;
+                    el.id = `blueprint-${name}`;
+                    el.dataset.blueprint = name;
+                    el.draggable = true;
+                    el.innerHTML = `<strong class="text-indigo-700"><i class="fas fa-cube mr-2"></i>${name}</strong>`;
+                    panel.appendChild(el);
+                });
+            },
+
+            renderMethods(names) {
+                const panel = document.getElementById('methods-panel');
+                panel.innerHTML = `<h3 class="text-lg font-semibold text-gray-700 mb-2">Behaviors</h3>`;
+                names.forEach(name => {
+                    const el = document.createElement('div');
+                    el.className = 'method-block';
+                    el.id = `method-${name.replace(/\s|"/g, '')}`;
+                    el.dataset.method = name;
+                    el.draggable = true;
+                    el.innerHTML = `<i class="fas fa-cogs mr-2 text-gray-500"></i><code>${name}</code>`;
+                    panel.appendChild(el);
+                });
+            },
+            
+            renderWorkspace(structure) {
+                const content = document.getElementById('workspace-content');
+                content.innerHTML = '';
+                Object.entries(structure).forEach(([key, value]) => {
+                    const container = document.createElement('div');
+                    container.id = `container-${key}`;
+                    container.dataset.name = key;
+                    if (value.parent) container.dataset.parent = value.parent;
+                    if (value.children) container.dataset.children = JSON.stringify(value.children);
+
+                    let element;
+                    if (value.type === 'base' || value.type === 'filled' || value.type === 'filled-methods') {
+                        element = document.createElement('div');
+                        element.className = 'class-box';
+                        if (value.type === 'base') element.classList.add('base');
+                        element.innerHTML = `<strong class="text-indigo-700"><i class="fas fa-cube mr-2"></i>${key}</strong>`;
+                        if (value.methods) {
+                            Object.entries(value.methods).forEach(([mKey, mVal]) => {
+                                element.innerHTML += `<div class="text-sm mt-1 ml-4 text-gray-600">.<span class="text-purple-600 font-medium">${mKey}</span>() { ${mVal} }</div>`;
+                            });
+                        }
+                    } else { // drop-zone
+                        element = document.createElement('div');
+                        element.className = 'drop-zone';
+                        element.id = `drop-zone-${key}`;
+                        element.dataset.accepts = key;
+                        element.innerHTML = `<span class="text-gray-400 font-medium">Drop '${key}' here</span>`;
+                    }
+                    
+                    container.appendChild(element);
+
+                    if (value.methodSlots) {
+                        value.methodSlots.forEach(slotName => {
+                            const slot = document.createElement('div');
+                            slot.className = 'method-slot';
+                            slot.id = `method-slot-${key}-${slotName}`;
+                            slot.dataset.acceptsMethod = slotName;
+                            slot.innerHTML = `<div class="text-sm ml-2 text-gray-600">.<span class="text-purple-600 font-medium">${slotName}</span>() { ... }</div>`;
+                            container.appendChild(slot);
+                        });
+                    }
+                    
+                    content.appendChild(container);
+                });
+            },
+
+            setupDragAndDrop() {
+                const draggables = document.querySelectorAll('[draggable="true"]');
+                const dropZones = document.querySelectorAll('.drop-zone, .method-slot');
+
+                draggables.forEach(draggable => {
+                    draggable.addEventListener('dragstart', e => {
+                        e.dataTransfer.setData('text/plain', e.target.id);
+                        setTimeout(() => draggable.classList.add('dragging'), 0);
+                    });
+                    draggable.addEventListener('dragend', () => draggable.classList.remove('dragging'));
+                });
+
+                dropZones.forEach(zone => {
+                    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+                    zone.addEventListener('drop', e => {
+                        e.preventDefault();
+                        zone.classList.remove('drag-over');
+                        const id = e.dataTransfer.getData('text/plain');
+                        const draggedEl = document.getElementById(id);
+                        this.handleDrop(draggedEl, zone);
+                    });
+                });
+            },
+
+            handleDrop(draggedEl, dropZone) {
+                let isValidDrop = false;
+
+                // Handle blueprint drops
+                if (draggedEl.dataset.blueprint && dropZone.dataset.accepts === draggedEl.dataset.blueprint) {
+                    dropZone.innerHTML = '';
+                    dropZone.appendChild(draggedEl);
+                    draggedEl.style.cursor = 'default';
+                    draggedEl.draggable = false;
+                    dropZone.classList.remove('drop-zone');
+                    dropZone.classList.add('feedback-correct');
+                    this.updateScore(50);
+                    isValidDrop = true;
+                }
+                // Handle method drops
+                else if (draggedEl.dataset.method && dropZone.dataset.acceptsMethod) {
+                    const level = this.levels[this.currentLevel];
+                    let isCorrectMethod = true;
+                    
+                    if (level.title.includes("Level 3") && dropZone.id.includes('breathe')) {
+                        this.showToast("Hint: Reusing code is more efficient. Try leaving this empty.", 'info');
+                        this.updateScore(-50);
+                        isCorrectMethod = false; // Penalize for redundant code
+                    }
+
+                    if (isCorrectMethod) {
+                        dropZone.innerHTML = '';
+                        dropZone.appendChild(draggedEl.cloneNode(true));
+                        dropZone.classList.add('feedback-correct');
+                        this.updateScore(100);
+                        isValidDrop = true;
+                    } else {
+                        dropZone.classList.add('feedback-incorrect');
+                        this.showToast("That's not an efficient choice!", 'error');
+                        setTimeout(() => dropZone.classList.remove('feedback-incorrect'), 500);
+                    }
+                }
+
+                if (isValidDrop) {
+                    this.updateProgress();
+                    this.drawLines();
+                    if (this.levels[this.currentLevel].checkCompletion()) {
+                        if(this.currentLevel === 2) {
+                             this.showToast("Efficiency Bonus! +200", 'success');
+                             this.updateScore(200);
+                        }
+                        setTimeout(() => this.showCompletionModal(), 800);
+                    }
+                }
+            },
+
+            updateProgress() {
+                const level = this.levels[this.currentLevel];
+                let stepsCompleted = 0;
+                if (level.title.includes("Level 1")) {
+                    if (document.getElementById('drop-zone-Mammal').children.length > 0) stepsCompleted++;
+                    if (document.getElementById('drop-zone-Bird').children.length > 0) stepsCompleted++;
+                } else if (level.title.includes("Level 2")) {
+                    if (document.querySelector('#method-slot-Dog-makeSound .method-block')) stepsCompleted++;
+                    if (document.querySelector('#method-slot-Cat-makeSound .method-block')) stepsCompleted++;
+                } else if (level.title.includes("Level 3")) {
+                    if (document.querySelector('#method-slot-Eagle-move .method-block')) stepsCompleted++;
+                    if (!document.querySelector('#method-slot-Eagle-breathe .method-block')) stepsCompleted++;
+                }
+                const progress = (stepsCompleted / 2) * 100;
+                this.updateProgressBar(progress);
+            },
+
+            updateProgressBar(percentage) {
+                document.getElementById('progress-bar').style.width = `${Math.min(percentage, 100)}%`;
+            },
+            
+            updateScore(points, animate = true) {
+                this.score += points;
+                document.getElementById('score-container').textContent = this.score;
+                if (animate && points !== 0) {
+                    const scoreChangeEl = document.createElement('div');
+                    scoreChangeEl.textContent = `${points > 0 ? '+' : ''}${points}`;
+                    scoreChangeEl.className = `score-change ${points > 0 ? 'score-plus' : 'score-minus'}`;
+                    document.getElementById('score-container').appendChild(scoreChangeEl);
+                    setTimeout(() => scoreChangeEl.remove(), 1500);
+                }
+            },
+
+            drawLines() {
+                const svg = document.getElementById('lines-svg');
+                const workspace = document.getElementById('workspace');
+                svg.innerHTML = '';
+                const workspaceRect = workspace.getBoundingClientRect();
+
+                document.querySelectorAll('[data-parent]').forEach(childContainer => {
+                    const parentContainer = document.querySelector(`[data-name="${childContainer.dataset.parent}"]`);
+                    if (parentContainer) {
+                        const parentRect = parentContainer.getBoundingClientRect();
+                        const childRect = childContainer.getBoundingClientRect();
+                        const startX = parentRect.left + parentRect.width / 2 - workspaceRect.left;
+                        const startY = parentRect.bottom - workspaceRect.top;
+                        const endX = childRect.left + childRect.width / 2 - workspaceRect.left;
+                        const endY = childRect.top - workspaceRect.top;
+                        const d = `M ${startX} ${startY} C ${startX} ${startY + 50}, ${endX} ${endY - 50}, ${endX} ${endY}`;
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        line.setAttribute('d', d);
+                        line.setAttribute('stroke', '#94a3b8');
+                        line.setAttribute('stroke-width', '3');
+                        line.setAttribute('fill', 'none');
+                        line.setAttribute('stroke-dasharray', '5, 5');
+                        svg.appendChild(line);
+                    }
+                });
+            },
+
+            showCompletionModal() {
+                const modal = document.getElementById('modal');
+                const modalIcon = document.getElementById('modal-icon');
+                const modalTitle = document.getElementById('modal-title');
+                const modalMessage = document.getElementById('modal-message');
+                const modalButton = document.getElementById('modal-button');
+
+                if (this.currentLevel >= this.levels.length - 1) {
+                    modalIcon.innerHTML = '&#127881;'; // Confetti
+                    modalTitle.textContent = "Challenge Complete!";
+                    modalMessage.textContent = `Amazing work! You've mastered the OOP efficiency challenge with a final score of ${this.score}. You can restart to try for a higher score!`;
+                    modalButton.textContent = "Play Again";
+                    modalButton.onclick = () => {
+                        this.hideModal();
+                        this.currentLevel = 0;
+                        this.loadLevel(this.currentLevel);
+                    };
+                } else {
+                    modalIcon.innerHTML = '&#11088;'; // Star
+                    modalTitle.textContent = `Level ${this.currentLevel + 1} Complete!`;
+                    modalMessage.textContent = `Excellent work! Your score for this level is ${this.score}. Ready for the next challenge?`;
+                    modalButton.textContent = "Next Level";
+                     modalButton.onclick = () => {
+                        this.hideModal();
+                        this.currentLevel++;
+                        this.loadLevel(this.currentLevel);
+                    };
+                }
+                
+                modal.classList.remove('modal-hidden');
+            },
+
+            hideModal() {
+                document.getElementById('modal').classList.add('modal-hidden');
+            },
+            
+            showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                let bgColor = 'bg-blue-500';
+                if (type === 'error') bgColor = 'bg-red-500';
+                if (type === 'success') bgColor = 'bg-green-500';
+                
+                toast.className = `${bgColor} text-white py-2 px-4 rounded-lg shadow-lg fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-500`;
+                toast.textContent = message;
+                
+                document.body.appendChild(toast);
+                
+                setTimeout(() => toast.classList.remove('translate-y-20', 'opacity-0'), 10);
+                setTimeout(() => {
+                    toast.classList.add('translate-y-20', 'opacity-0');
+                    setTimeout(() => toast.remove(), 500);
+                }, 4000);
+            }
+        };
+
+        window.addEventListener('DOMContentLoaded', () => game.init());
+        window.addEventListener('resize', () => game.drawLines());
+    </script>
+</body>
+</html>
